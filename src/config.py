@@ -6,18 +6,32 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s', datefmt='%H:%M:%S')
 logger = logging.getLogger('murasame_bot')
 
-# ----------------- 路径定义 (适配新构型) -----------------
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
 
-# 资源路径
+# ----------------- 资源与配置路径 -----------------
 MURASAME_BASE_PATH = os.path.join(PROJECT_ROOT, "resource", "murasame")
-# 属性配置文件路径
+# 🌟 这里定义了报错缺失的背景图目录！
+BACKGROUNDS_DIR = os.path.join(PROJECT_ROOT, "resource", "backgrounds")
+
 PROPERTIES_DIR = os.path.join(PROJECT_ROOT, "properties")
 PROMPTS_DIR = os.path.join(PROPERTIES_DIR, "system_prompts")
 SETTINGS_FILE = os.path.join(PROPERTIES_DIR, "server_settings.json")
+# 🌟 这里定义了报错缺失的长时记忆数据库文件！
+MEMORY_FILE = os.path.join(PROPERTIES_DIR, "memory.json")
 
-# ----------------- 配置加载 -----------------
+# ----------------- 规则映射 -----------------
+# 🌟 这里定义了报错缺失的时间段对应背景规则！
+PHASE_BACKGROUND_MAPPING = {
+    "night_sleep": {"prefix": "朝武_自室", "suffix": "D"},       # 关灯卧室
+    "weekend_day": {"prefix": "朝武_リビング", "suffix": "A"},     # 🌟 修改：周末白天在客厅
+    "weekend_evening": {"prefix": "朝武_リビング", "suffix": "D"}, # 🌟 修改：周末夜晚在客厅
+    "weekday_morning": {"prefix": "神社_境内", "suffix": "A"},   # 白天神社
+    "weekday_school": {"prefix": "学院_教室", "suffix": "A"},    # 白天教室
+    "weekday_job": {"prefix": "街_甘味処", "suffix": "B"},       # 黄昏甜品店
+    "weekday_evening": {"prefix": "神社_境内", "suffix": "C"},   # 夜晚神社
+}
+
 OUTFIT_FOLDERS = {
     "kimono": "kimono",
     "maid": "maid",
@@ -25,28 +39,26 @@ OUTFIT_FOLDERS = {
     "uniform": "uniform"
 }
 
+# ----------------- API 与 模型设置 -----------------
 DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:1234/v1")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "not-needed")
 MODEL_NAME = "gemma"
 
-# 🌟 核心：一次性加载所有的 System Prompts
+# ----------------- 提示词加载 -----------------
 SYSTEM_PROMPTS = {}
-# 加载英文
 try:
     with open(os.path.join(PROMPTS_DIR, "system_prompt_EN.txt"), "r", encoding="utf-8") as f:
         SYSTEM_PROMPTS["en"] = f.read()
 except FileNotFoundError:
-    logger.error("❌ system_prompt_EN.txt not found!")
+    logger.warning("system_prompt_EN.txt not found!")
     SYSTEM_PROMPTS["en"] = "You are Murasame. Respond in JSON."
-# 加载中文
 try:
     with open(os.path.join(PROMPTS_DIR, "system_prompt_ZH.txt"), "r", encoding="utf-8") as f:
         SYSTEM_PROMPTS["zh"] = f.read()
 except FileNotFoundError:
-    logger.error("❌ system_prompt_ZH.txt not found!")
+    logger.warning("system_prompt_ZH.txt not found!")
     SYSTEM_PROMPTS["zh"] = "你是丛雨。请用JSON回复。"
-
 
 # ----------------- 动作触发配置 -----------------
 ACTIONS_CONFIG = {
