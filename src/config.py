@@ -82,4 +82,4 @@ ACTIONS_CONFIG = {
     }
 }
 
-EMOTION_EMOJIS = {"happy": "✨", "angry": "💢", "sad": "💧", "surprised": "❗", "other": "🌸"}
+EMOTION_EMOJIS = {"happy": "✨", "angry": "💢", "sad": "💧", "surprised": "❗"}

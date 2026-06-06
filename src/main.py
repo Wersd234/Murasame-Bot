@@ -3,6 +3,9 @@ from discord import app_commands
 from discord.ext import tasks
 import re
 import datetime
+import base64
+import io
+from PIL import Image
 from collections import deque
 
 from config import DISCORD_TOKEN, SYSTEM_PROMPTS, ACTIONS_CONFIG, EMOTION_EMOJIS, logger
@@ -26,7 +29,7 @@ class AnimeBot(discord.Client):
         logger.info("✅ Slash commands 同步完成！")
 
     async def on_ready(self):
-        logger.info(f"✅ Bot '{self.user.name}' is Online | Multi-Language & Modular Prompt Enabled.")
+        logger.info(f"✅ Bot '{self.user.name}' is Online | Multimodal Vision Enabled.")
 
     @tasks.loop(minutes=10)
     async def dynamic_presence(self):
@@ -64,7 +67,6 @@ class AnimeBot(discord.Client):
             self.current_time_phase = phase
             self.manual_override = False
             self.current_outfit = auto_outfit
-            logger.info(f"⏰ Time Phase changed to {phase}. Outfit set to {auto_outfit}.")
 
         display_status = status
         if self.manual_override:
@@ -87,11 +89,10 @@ class AnimeBot(discord.Client):
         if not (is_mentioned or is_reply):
             return
 
-        # 获取当前服务器的语言
         guild_id = str(message.guild.id) if message.guild else str(message.author.id)
         current_lang = get_server_language(guild_id)
 
-        # 处理动作触发器
+        # ----------------- 动作触发器 -----------------
         for action, data in ACTIONS_CONFIG.items():
             triggered = False
             for trigger in data["triggers"]:
@@ -115,27 +116,65 @@ class AnimeBot(discord.Client):
                         await message.reply(content=reply_text)
                 return
 
-        # 处理 LLM 对话逻辑
+        # ----------------- 多模态与对话逻辑 -----------------
+        # ⚠️ 修复点：这里如果缺少就会报 KeyError！
         if message.channel.id not in self.history:
             self.history[message.channel.id] = deque(maxlen=10)
 
         async with message.channel.typing():
-            user_input = message.content.replace(f'<@{self.user.id}>', '').strip()
+            user_input_text = message.content.replace(f'<@{self.user.id}>', '').strip()
+
+            image_bytes = None
+            for attachment in message.attachments:
+                if attachment.content_type and attachment.content_type.startswith("image/"):
+                    image_bytes = await attachment.read()
+                    logger.info("📸 检测到图片附件，正在进行压缩与标准化转码...")
+                    break
+
+            if image_bytes:
+                try:
+                    # 压缩图片并转换为标准 JPEG Base64
+                    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+                    img.thumbnail((1024, 1024))  # 等比例压缩限制大小
+
+                    buffer = io.BytesIO()
+                    img.save(buffer, format="JPEG", quality=85)
+                    base64_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
+
+                    user_msg_content = []
+                    text_prompt = user_input_text if user_input_text else (
+                        "看看这张图片。" if current_lang == "zh" else "Look at this image.")
+                    user_msg_content.append({"type": "text", "text": text_prompt})
+                    user_msg_content.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}"
+                        }
+                    })
+                    logger.info("✅ 图片转码完成，已送入大模型！")
+                except Exception as e:
+                    logger.error(f"处理图片失败: {e}")
+                    user_msg_content = user_input_text or "..."
+            else:
+                user_msg_content = user_input_text or "..."
+
+            # 组装 System Prompt
             current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-
-            # 🌟 核心：直接取出当前语言对应的 System Prompt
             base_prompt = SYSTEM_PROMPTS.get(current_lang, SYSTEM_PROMPTS["en"])
-
-            # 拼接动态的环境信息（当前时间与衣服）
             time_aware_prompt = base_prompt + (
                 f"\n\n[System Note: The current local time is {current_time}. "
                 f"You are currently wearing a '{self.current_outfit}' outfit.]"
             )
 
             messages = [{"role": "system", "content": time_aware_prompt}]
-            messages.extend(self.history[message.channel.id])
-            messages.append({"role": "user", "content": user_input or "..."})
 
+            # 填入历史记忆
+            for entry in self.history[message.channel.id]:
+                messages.append(entry)
+
+            messages.append({"role": "user", "content": user_msg_content})
+
+            # 调用大模型
             llm_response = await generate_reply(messages)
 
             if llm_response is None:
@@ -147,7 +186,9 @@ class AnimeBot(discord.Client):
             view = llm_response.get("view", "front")
             reply_text = llm_response.get("reply", "...")
 
-            self.history[message.channel.id].append({"role": "user", "content": user_input})
+            # 记忆储存：图文只存文本部分，防崩溃
+            self.history[message.channel.id].append(
+                {"role": "user", "content": user_input_text if user_input_text else "[发送了一张图片]"})
             self.history[message.channel.id].append({"role": "assistant", "content": reply_text})
 
             image_path = get_random_emotion_image(self.current_outfit, emotion, view)
