@@ -1,3 +1,11 @@
+# Discord 核心库 (支持斜杠指令 /Slash Commands)
 discord.py>=2.3.2
+
+# 环境变量加载
+python-dotenv>=1.0.0
+
+# OpenAI 标准接口库 (用于对接 LM Studio / llama.cpp / Gemma 4)
 openai>=1.14.0
-python-dotenv>=1.0.1
+
+# 图像处理库 (用于立绘裁切、背景合成、高斯模糊与多模态图片压缩)
+Pillow>=10.2.0
